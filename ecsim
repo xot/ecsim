@@ -227,14 +227,17 @@ def optimal_battery_strategy_generic(tariff, load, vehicle_load):
     for h in range(hours):
         batterychargex[h] = solver.NumVar(-MAXCHARGE, MAXCHARGE, f'batterychargex[{h}]')
     # Add constraints for each resource
-    for h in range(1,hours+1):
+    for h in range(0,hours+1):
         # - battery cannot create power out of nothing!
+        # (also guarantees that battery is charged enough to drive the car
+        # according to vehicle_load[])
+        #
+        # NOTE: specifying unreasonable vehcile usage constraints (eg demanding the car
+        # can immediately  be used when the simulation starts) may prevent
+        # the simulator from finding a solution
         solver.Add( 0 <= battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) )
         # - don't overcharge battery; 
         solver.Add( battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) <= BATTERY_CAPACITY )
-    # - make sure battery is charged for vehicle use
-    for h in range(1,hours):
-        solver.Add( battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) >= vehicle_load[h])
     # - make sure battery is not charged when vehicle is in use
     for h in range(hours):
         if vehicle_load[h] > 0:
@@ -289,8 +292,11 @@ def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today
     # compute consumption/solar production per hour using average distribution
     # of CONSUMPTION_PER_HOUR and SOLAR_PER_HOUR and use that to compute
     # the estimated load for each hour in the lookahead period
+    #
+    # this assumes consumption/production today and tomorrow
+    # (maximum lookahed anyway) is the same
     load = [ consumption_today * CONSUMPTION_PER_HOUR[h % 24] 
-           - solar_today * SOLAR_PER_HOUR[h % 24] 
+           - solar_today  * SOLAR_PER_HOUR[h % 24] 
            for h in range(start,start+lookahead) ]
     # compute the vehicle load
     vehicle_load = compute_vehicle_load(vehicle_usage_today, lookahead) 

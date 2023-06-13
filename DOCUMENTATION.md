@@ -42,7 +42,7 @@ $$e_n = e_c - e_r = \sum_{d=0}^{354} \sum_{h=0}^{23} e[d,h].$$
 Typically, some of the solar energy produced is immediately consumed by household appliances, and therefore some of the production and consumption is not measured by the meter. We have $e_c \le e_u$ and $e_r \le e_s$.
 
 Assuming no losses when charging or discharging the battery, and provided the battery is empty at the start and the end of a year, we also have
-$e_n = e_u + e_v - e_s$. This follows from the fact that whatever enters the battery needs to leave it at some point, and any excess solar energy not used to charge the battery needs to leave the local grid through the meter, and any additional energy necessary to charge the battery or run household appliances also needs to enter through the meter.
+$e_n = e_u + e_v - e_s$. This follows from the fact that whatever enters the battery needs to leave it at some point or is consumed by the electrical vehicle, and any excess solar energy not used to charge the battery needs to leave the local grid through the meter, and any additional energy necessary to charge the battery or run household appliances also needs to enter through the meter.
 
 # Typical electricity cost structure
 
@@ -58,11 +58,13 @@ Of these, only the electricity price itself is dynamic and changes every hour. T
 
 Government taxes and levies *only* apply to the *net* energy consumption over the (annual) billing period. If you consumed $e_c$ energy and returned $e_r$ energy in a year, the total taxes and levies due are determined by $e_n = e_c - e_r$: if $e_n \le 0$ *no* taxes or levies are due. In other words, 
 if we define $Z(x)$ as 
+
 $$Z(x) = \begin{cases} 
             x & \textit{if $x \ge 0$} \\
 			0 & \textit{otherwise}
 			\end{cases}
 $$
+
 then the total taxes due equal $Z(e_n) \times t$.
 
 Energy supplier surcharges contribute to the energy cost in different ways. Some energy suppliers charge the surcharge *both* for energy consumed and for energy returned. Others only charge the surcharge for the excess of energy consumed (i.e. like the government taxes). 
@@ -82,6 +84,8 @@ In the simulator, two separate surcharges $s_n$ and $s_x$ are defined, and follo
 Observe that the first case above corresponds to $s_n=s$ and $s_x=0$ while
 the second case above corresponds to $s_n=0$ and $s_x=s$.
 
+Also observe that the total cost depends on the hourly energy consumption $e[d,h]$ which in turn depends on the hourly battery charge $b[d,h]$ (which does not influence the first term $Z(e_n) \times (s_x+t)$). The optimal cost is  thus determined by the battery charge strategy.
+
 # Finding an optimal battery charge strategy
 
 The battery in the electric vehicle is primarily used to power the vehicle of course. It can also be used to take advantage of the fluctuating dynamic prices by charging it when electricity is cheap and discharging it when electricity is more expensive. It can also be used to temporarily store solar energy to return it when local energy demand is high or electricity prices are high. To accomplish this, a *battery charging strategy* $b[d,h]$ must be computed that instructs the battery when to charge or discharge. 
@@ -97,12 +101,41 @@ The output is a battery charging schedule $b[h]$ for these hours.
 
 Let $e[h] =e_c[h]+b[h]-e_s[h]$. The goal is to minimise
 
-$$ \sum_{h=0}^{H} e[h] \times p[h] + |e[h]| \times s_n$$ 
+$$ G(b[]) = \sum_{h=0}^{H} e[h] \times p[h] + |e[h]| \times s_n$$ 
 
-under certain constraints. (Observe that any energy consumed by the electric vehicle is hidden in the battery charge.)
+under certain constraints. (Observe that any energy consumed by the electric vehicle is hidden in the battery charge.) Observe that this is equivalent to minimising
 
-These constraints are the following.
+$$ G'(b[h]) = \sum_{h=0}^{H} b[h] \times p[h] + |b[h]| \times s_n.$$ 
 
+Define
+
+$$ B[h] = b_0 + \sum_{i=0}^{h-1} b[i] - e_v[h] $$
+
+as the charge of the battery at hour $h$ (where $b_0$ is the initial battery charge when the simulation is started). Recall that the electrical vehicle consumes its energy through the battery. The constraints are the following.
+
+
+- $-C \le b[h] \le C$, for all $h \in [0,\ldots,H]$: the battery cannot be charged or discharged more than allowed by the electrical installation.
+- $0 \le B[h] \le $B$, for all $h \in [0,\ldots,H+1]$: the battery cannot create power out of nothing and cannot be charged beyond its capacity. Note this also guarantees that the battery is always sufficiently charged to drive the vehicle as specified by $e_v[h]$.[^vehicle]
+- $ b[h] = 0$ if $e_v[h] > 0$, $h \in [0,\ldots,H]$: when using the car, the battery cannot be charged.
+
+[^vehicle]: Specifying unreasonable vehcile usage constraints (eg demanding the car can immediately  be used when the simulation starts) may prevent the simulator from finding a solution.
+
+where 
+
+- $C$ is the maximal hourly charge/discharge for the battery (11 kWh for typical electrical installations in the Netherlands).
+- $B$ is the maximum battery capacity.
+
+Because the simulator needs to optimise for a formula containing the absolute value of the variable $b[h]$ we use [the following trick](https://lpsolve.sourceforge.net/5.1/absolute.htm): introduce additional ghost variables $b'[h]$ that serve as this absolute value in the (modified) optimisation formula
+
+$$ G''[b[],b'[]) = \sum_{h=0}^{H} b[h] \times p[h] + b'[h] \times s_n$$ 
+
+with the following additional constraints:
+
+- $b[h] \le b'[h]$, for all $h \in [0,\ldots,H]$, and
+- $-b[h] \le b'[h]$, for all $h \in [0,\ldots,H]$.
+
+Then if $0 \le b[h]$, then $0 \le b[h] \le b'[h]$ by the first rule, while if
+$b[h] < 0$ then $0 < -b[h] \le b'[h]$ by the second rule. As $G''$ decreases as $b'[h]$ decreases, the optimal choice for $b'[h]$ is either $b[h]$ in the first case or $-b[h]$ in the second case. In other words: $b'[h] = | b[h] |$. 
 
 
 # Simulating
