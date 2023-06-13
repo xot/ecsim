@@ -1,0 +1,435 @@
+#!/usr/local/bin/python3
+#
+# ECSIM
+#
+# A simple dynamic energy cost simulator
+#
+# Author: Jaap-henk Hoepman (info@xot.nl)
+
+import argparse
+from functools import reduce
+
+
+# Import OR-Tools wrapper for linear programming
+from ortools.linear_solver import pywraplp
+
+# Import tariffs
+
+usage_tariffs = {}
+return_tariffs = {}
+
+from usage_tariffs_2022 import *
+from return_tariffs_2022 import *
+
+usage_tariffs["2022"] = USAGE_TARIFFS_2022
+return_tariffs["2022"] = RETURN_TARIFFS_2022
+
+from usage_tariffs_2021 import *
+from return_tariffs_2021 import *
+
+usage_tariffs["2021"] = USAGE_TARIFFS_2021
+return_tariffs["2021"] = RETURN_TARIFFS_2021
+
+from usage_tariffs_2019 import *
+from return_tariffs_2019 import *
+
+usage_tariffs["2019"] = USAGE_TARIFFS_2019
+return_tariffs["2019"] = RETURN_TARIFFS_2019
+
+# TABLES
+
+# Average fraction of yearly solar production produced each
+# month (Jan=0, dec=11)
+SOLAR_PER_MONTH = [0.03, 0.05, 0.08, 0.12, 0.13, 0.13,
+                   0.13, 0.11, 0.10, 0.07, 0.03, 0.02]
+
+# Average fraction of daily solar production produced each hour (0-23)
+# (if panels are facing south)
+SOLAR_PER_HOUR_NORTH_SOUTH = [0.000, 0.000, 0.000, 0.000, 0.000, 0.004,
+                              0.007, 0.013, 0.016, 0.041, 0.082, 0.114,
+                              0.127, 0.131, 0.127, 0.118, 0.098, 0.065,
+                              0.036, 0.016, 0.005, 0.000, 0.000, 0.000]
+
+# Average fraction of daily solar production produced each hour (0-23)
+# (if panels are facing east-west)
+SOLAR_PER_HOUR_EAST_WEST = [0.000, 0.000, 0.000, 0.000, 0.000, 0.005,
+                            0.013, 0.028, 0.043, 0.063, 0.079, 0.095,
+                            0.102, 0.100, 0.098, 0.095, 0.087, 0.076,
+                            0.063, 0.032, 0.016, 0.005, 0.000, 0.000]
+
+# Average fraction of yearly energy consumption consumed each
+# month (Jan=0, dec=11)
+#
+CONSUMPTION_PER_MONTH = [0.098, 0.085, 0.090, 0.079, 0.077, 0.072,
+                         0.074, 0.075, 0.073, 0.085, 0.090, 0.102]
+
+# Average fraction of daily energy consumption consumed each hour (0-23)
+CONSUMPTION_PER_HOUR = [0.033, 0.028, 0.025, 0.023, 0.023, 0.025,
+                        0.029, 0.036, 0.042, 0.044, 0.044, 0.044,
+                        0.044, 0.042, 0.042, 0.042, 0.049, 0.060,
+                        0.062, 0.060, 0.058, 0.054, 0.050, 0.041]
+
+def parse_commandline():
+    """Parse the commandline and set all options
+    """
+    global SOLAR_PRODUCTION, ENERGY_CONSUMPTION, BATTERY_CAPACITY
+    global VEHICLE_CONSUMPTION, HIGHEST_PRICE, LOWEST_PRICE, DYNAMIC
+    global ORIENTATION, YEAR, ENERGY_TAX, SURCHARGE, XSURCHARGE, MAXCHARGE
+    global SIMULATION_START_HOUR, VAT
+    # Set up arguments parsing
+    parser = argparse.ArgumentParser(description='ECSIM. A dynamic energy cost simulator.')
+    parser.add_argument('-z','--solar', default=2000, type=int,
+                        help='Total solar production per year in kWh.')
+    parser.add_argument('-c','--consumption', default=2300, type=int,
+                        help='Total energy consumption per year in kWh.')
+    parser.add_argument('-b','--battery', default=0, type=int,
+                        help='Total battery capacity in kWh.')
+    parser.add_argument('-m','--maxcharge', default=11, type=int,
+                        help='Maximum battery charge per hour in kW.')
+    parser.add_argument('-v','--vehicle', default=0, type=int,
+                        help='Total electric vehicle energy usage per year in kWh.')
+    parser.add_argument('-p','--loprice', default=0.05, type=float,
+                        help='Minimum energy price per kWh in a year.')
+    parser.add_argument('-P','--hiprice', default=0.20, type=float,
+                        help='Maximum energy price per kWh in a year.')
+    parser.add_argument('-e','--energytax', default=0.15, type=float,
+                        help='Energy tax per kWh.')
+    parser.add_argument('-s','--surcharge', default=0.02, type=float,
+                        help='Supplier surcharge per kWh, always levied (in both directions).')
+    parser.add_argument('-x','--xsurcharge', default=0.00, type=float,
+                        help='Supplier surcharge per kWh, levied only for excess return.')
+    parser.add_argument('-d','--dynamic', default=True, action='store_true',
+                        help='Simulate a dynamic or fixed price model.')
+    parser.add_argument('-a','--start', default=15, type=int,
+                        help='Hour of the day the simulation starts each day (when tomorrows tariffs are published).')
+    parser.add_argument('-t','--vat', default=21, type=int,
+                        help='Value added tax (VAT), in percentages.')
+    parser.add_argument('-o','--orientation', default=False, action='store_true',
+                        help='Simulate south (default) or east/west (option selected) orientation of panels.')
+    parser.add_argument('-y','--year', default="2022", type=str,
+                        help='Year to simulate.')
+    args = parser.parse_args()
+    SOLAR_PRODUCTION = args.solar
+    ENERGY_CONSUMPTION = args.consumption
+    BATTERY_CAPACITY = args.battery
+    MAXCHARGE = args.maxcharge
+    VEHICLE_CONSUMPTION = args.vehicle
+    HIGHEST_PRICE = args.hiprice
+    LOWEST_PRICE = args.loprice
+    DYNAMIC = args.dynamic
+    SIMULATION_START_HOUR = args.start
+    if (SIMULATION_START_HOUR < 0) or (SIMULATION_START_HOUR > 23):
+        print(f'Simultation start hour {SIMULATION_START_HOUR} out of range.')
+        exit()
+    ORIENTATION = args.orientation
+    YEAR = args.year
+    # see https://www.easyenergy.com/nl/energietarieven
+    # levied on every kWh used; returned on every kWh returned
+    ENERGY_TAX = args.energytax
+    # VAT (specified in percentages)
+    VAT = args.vat / 100
+    # levied on every kWh used or returned
+    SURCHARGE = args.surcharge
+    # levied on every kWh returned in excess of consumption
+    XSURCHARGE = args.xsurcharge
+    if (YEAR not in usage_tariffs.keys()) and (YEAR not in return_tariffs.keys()):
+        print(f'No tariff information for year {YEAR}.')
+        exit()
+        
+# ---
+# VALIDATION
+# ---
+
+def check_tariff_table(table):
+    if len(table) != 365:
+        print(f'-- Table has wrong length {len(table)}.')
+    for d in range(365):
+        if len(table[d]) != 24:
+            print(f'--- Day {d} has wrong length {len(table[d])}.')
+
+def check_tables():
+    print('Validating internal tables')
+    print(f'- Total solar fractions: {sum(SOLAR_PER_MONTH)}')
+    print(f'- Total solar north/south hourly fractions: {sum(SOLAR_PER_HOUR_NORTH_SOUTH)}')
+    print(f'- Total solar east/west hourly fractions: {sum(SOLAR_PER_HOUR_EAST_WEST)}')
+    print(f'- Total consumption fractions: {sum(CONSUMPTION_PER_MONTH)}')
+    print(f'- Total consumption hourly fractions: {sum(CONSUMPTION_PER_HOUR)}')
+    print(f'- Validating tariff tables:')
+    print(f'-- Usage table for year {YEAR}.')
+    check_tariff_table(usage_tariffs[YEAR])
+    print(f'-- Return table for year {YEAR}.')
+    check_tariff_table(return_tariffs[YEAR])
+    
+
+# ---
+# DYNAMIC TARIFF SIMULATION
+# ---
+
+
+def day_hour_usage_tariff(day,hour):
+    ut = usage_tariffs[YEAR][day][hour]
+    # you pay both taxes and the surcharge
+    return ut + ENERGY_TAX + SURCHARGE
+
+def day_hour_return_tariff(day,hour):
+    rt = return_tariffs[YEAR][day][hour]
+    # you get the taxes back, but still pay the surcharge (return tariffs
+    # are *subtracted* from the total price in the simulation).
+    return rt + ENERGY_TAX - SURCHARGE
+
+def day_hour_avg_tariff(day,hour):
+    # See optimal_battery_strategy
+    ut = usage_tariffs[YEAR][day][hour]
+    rt = return_tariffs[YEAR][day][hour]
+    return (ut+rt)/2+ENERGY_TAX
+
+# ---
+
+def battery_charge_at_hour(hour, initial_charge, vehicle_load, batteryload):
+    """Compute the battery charge at the indicated hour given the
+       initial charge, the vehicle battery load, and the chosen battery load schedule.
+    """
+    result = initial_charge
+    for h in range(hour):
+        result = result + batteryload[h] - vehicle_load[h]
+    return result
+
+initial_charge = 0
+
+def optimal_battery_strategy_generic(tariff, load, vehicle_load):
+    """Compute an optimal battery charging strategy assuming the following:
+        - tariff: a list of hourly rates for using/returning electricity.
+        - load: a list of electricity load (>0 usage, <0 (solar) return).
+        - vehicle_load: a list of electricty loads for a electric vehcile; if
+            positive, that hour the car is used an the battery is disconnected
+        Return:
+        - the computed battery charging strategy as a list of hourly
+        charges/discharges
+        All lists have the same length. The battery charged is computed assuming
+        the following
+        - fixed SURCHARGE is charged for every kWh transferred to or from the net
+    """
+    global initial_charge
+    initial_charge_backup = initial_charge
+    hours = len(tariff)
+    if (len(load) != hours) or (len(vehicle_load) != hours):
+        print('ERROR! Inputs have different length.')
+        initial_charge = initial_charge_backup
+        return []
+    # Create a solver using the GLOP backend
+    solver = pywraplp.Solver('Battery strategy', pywraplp.Solver.GLOP_LINEAR_PROGRAMMING)
+    # Create the variables we want to optimize
+    batterycharge = [ None for h in range(hours) ]
+    for h in range(hours):
+        batterycharge[h] = solver.NumVar(-MAXCHARGE, MAXCHARGE, f'batterycharge[{h}]')
+    # Add ghost-variables for absolute value simulation
+    batterychargex = [ None for h in range(hours) ]
+    for h in range(hours):
+        batterychargex[h] = solver.NumVar(-MAXCHARGE, MAXCHARGE, f'batterychargex[{h}]')
+    # Add constraints for each resource
+    for h in range(1,hours+1):
+        # - battery cannot create power out of nothing!
+        solver.Add( 0 <= battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) )
+        # - don't overcharge battery; 
+        solver.Add( battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) <= BATTERY_CAPACITY )
+    # - make sure battery is charged for vehicle use
+    for h in range(1,hours):
+        solver.Add( battery_charge_at_hour(h, initial_charge, vehicle_load, batterycharge) >= vehicle_load[h])
+    # - make sure battery is not charged when vehicle is in use
+    for h in range(hours):
+        if vehicle_load[h] > 0:
+            maxcharge = 0
+        else:
+            maxcharge = MAXCHARGE
+        solver.Add(batterycharge[h] <= maxcharge)
+    # - ghost variable constraints
+    # (see https://lpsolve.sourceforge.net/5.1/absolute.htm)
+    for h in range(hours):
+        solver.Add( batterycharge[h] <= batterychargex[h] )
+        solver.Add( -batterycharge[h] <= batterychargex[h] )
+    # solve(note: vehcile_laod is consumed through battery)
+    solver.Minimize( reduce(lambda a, b: a + b,
+            [ tariff[h]*(batterycharge[h] + load[h])
+            + SURCHARGE * batterychargex[h]  
+            for h in range(hours)
+            ]))
+    status = solver.Solve()
+    # return result
+    if status == pywraplp.Solver.OPTIMAL:
+        return [batterycharge[h].solution_value() for h in range(hours)]
+    else:
+        print('ERROR! No battery charging strategy  found.')
+        initial_charge = initial_charge_backup
+        return []
+
+
+# first hour electric vehicle will be used (relative to simulation start time)
+USAGE_START = 10
+# number of hours vehcile will be used (and battery disconnected)
+USAGE_LENGTH = 5
+    
+def compute_vehicle_load(total, lookahead):
+    """Compute a list of loads for when the electric vehicle is used the
+       coming hours. 
+       TODO: add otpions
+    """
+    vehicle_load = [0 for h in range(lookahead)]
+    for h in range(USAGE_START,USAGE_START + USAGE_LENGTH):
+        vehicle_load[h % lookahead] = total / USAGE_LENGTH
+    return vehicle_load
+        
+def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today, vehicle_usage_today):
+    """Simulate a single day in the dynamic pricing scheme, using
+       arbitrary lookahead and starting hour.
+       Returns the (minimum) price for 24 hours of energy consumption/return,
+       by the computed optimal battery charging strategy, starting on day
+       'day' at hour 'start' (i.e. days are shifted by start hours). 
+    """
+    global initial_charge
+    # compute consumption/solar production per hour using average distribution
+    # of CONSUMPTION_PER_HOUR and SOLAR_PER_HOUR and use that to compute
+    # the estimated load for each hour in the lookahead period
+    load = [ consumption_today * CONSUMPTION_PER_HOUR[h % 24] 
+           - solar_today * SOLAR_PER_HOUR[h % 24] 
+           for h in range(start,start+lookahead) ]
+    # compute the vehicle load
+    vehicle_load = compute_vehicle_load(vehicle_usage_today, lookahead) 
+    # get the pricing vectors: first entry corresponds to start (hour); length is lookahead
+    todays_usage_tariffs = [ day_hour_usage_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
+    todays_return_tariffs = [ day_hour_return_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
+    avg_tariff = [ day_hour_avg_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
+    batterycharge = optimal_battery_strategy_generic(avg_tariff, load, vehicle_load)
+    # Now compute the actual cost (and the new initial charge ONLY
+    # for exactly one day (ie the next 24 hours)
+    if len(batterycharge) > 0:
+        # update initial charge
+        initial_charge = battery_charge_at_hour(24, initial_charge, vehicle_load, batterycharge)
+        # and cover for rounding errors
+        if initial_charge < 0:
+            initial_charge = 0
+        # compute actual price for today given the computed battery load
+        # the correct usage and return tariffs and the netto consumption
+        # (again note that the vehicle load is part of the batterycharge
+        actual = 0
+        for h in range(24):
+            total = batterycharge[h] + load[h] 
+            if total > 0:
+                actual += todays_usage_tariffs[h] * total
+            else:
+                actual += todays_return_tariffs[h] * total
+        #print(f'Solver says {solver.Objective().Value()}.')
+        #print(f'New battery charge {initial_charge}.')
+        #print(f'{actual:.2f}',end='')
+        return actual
+    return 0
+    
+DAYS_IN_MONTH = [31,28,31,30,31,30,31,31,30,31,30,31]
+
+def month_of_day(day):
+    """Return the month this day is in
+       - day: 0..364
+    """
+    res = 0
+    month = 0
+    while day >= res + DAYS_IN_MONTH[month]:
+        res += DAYS_IN_MONTH[month]
+        month +=1
+    return month
+
+# hour of the day when new simulation with lookahead starts; time
+# when the new energy proces are published
+SIMULATION_START_HOUR = 15
+
+
+def simulate_dynamic():
+    """Simulate a dynamic pricing scheme, using hourly tariffs from
+       usage_tariffs[YEAR] and return_tariffs[YEAR].  
+    """
+    result = 0
+    for day in range(364):
+        month = month_of_day(day)
+        days_this_month = DAYS_IN_MONTH[month]
+        solar_this_month = SOLAR_PRODUCTION * SOLAR_PER_MONTH[month]
+        solar_this_day = solar_this_month / days_this_month
+        consumption_this_month = \
+            ENERGY_CONSUMPTION * CONSUMPTION_PER_MONTH[month] 
+        consumption_this_day = consumption_this_month / days_this_month
+        vehicle_usage_this_month =  VEHICLE_CONSUMPTION / 12
+        vehicle_usage_this_day = vehicle_usage_this_month / days_this_month
+        # the simulation looks ahead 24 hours if SIMULATION_START_HOUR = 0
+        # (i.e. if normal days are simulated); otherwise it looks ahead from
+        # this start hour until 24:00 the next day.
+        SIMULATION_LOOKAHEAD = 24
+        if SIMULATION_START_HOUR > 0:
+            SIMULATION_LOOKAHEAD += 24 - SIMULATION_START_HOUR
+        day_result = simulate_day_lookahead(day, SIMULATION_START_HOUR, SIMULATION_LOOKAHEAD, solar_this_day, consumption_this_day, vehicle_usage_this_day)
+        #print(f'€ {day_result:.2f} ',end='')
+        result += day_result
+    # simulate last day 'normally': with 24 hour lookahead starting at hour 0);
+    # this also compensates for not charging the first
+    # SIMULATION_START_HOUR hours on day 0
+    result += simulate_day_lookahead(364, 0, 24, solar_this_day, consumption_this_day, vehicle_usage_this_day)
+    # add excess usage surcharge
+    net_load = ENERGY_CONSUMPTION + VEHICLE_CONSUMPTION - SOLAR_PRODUCTION
+    if net_load > 0 :
+        result += net_load * XSURCHARGE
+    # add VAT
+    if result > 0:
+        result = result * (1+ VAT)
+    return result
+
+# ---
+# STATIC TARIFF SIMULATION
+# ---
+
+def simulate_static():
+    """Simulate (not really ;-) a static pricing scheme, with HIGHEST_PRICE
+       tariff for consumption and LOWEST_PRICE for solar return.
+    """
+    # battery is irrelevant (assuming complete 'saldering')
+    consumption = ENERGY_CONSUMPTION + VEHICLE_CONSUMPTION - SOLAR_PRODUCTION
+    if consumption > 0:
+        return consumption * (HIGHEST_PRICE + ENERGY_TAX)
+    else:
+        return -consumption * (LOWEST_PRICE + ENERGY_TAX)
+    
+# ---
+# MAIN
+# ---
+
+# parse the command line, and set all options
+parse_commandline()
+if DYNAMIC:
+    print('Simulating a dynamic model with the following parameters:')
+    print(f'- Year {YEAR}.')
+    print(f'- Surcharge € {SURCHARGE} (both usage and return) € {XSURCHARGE} (for excess usage only).')
+    print(f'- Starting simulation at hour {SIMULATION_START_HOUR}.')
+else:
+    print('Simulating a static model with the following parameters:')
+    print(f'- Fixed tariffs. Consumption: € {HIGHEST_PRICE}, return: € {LOWEST_PRICE}.')
+print(f'- {SOLAR_PRODUCTION} kWh solar production.')
+if ORIENTATION:
+    print('-- Solar panels oriented east-west.')
+    SOLAR_PER_HOUR = SOLAR_PER_HOUR_EAST_WEST
+else:
+    print('-- Solar panels oriented south.')
+    SOLAR_PER_HOUR = SOLAR_PER_HOUR_NORTH_SOUTH
+print(f'- {ENERGY_CONSUMPTION} kWh energy consumption.')
+print(f'- {VEHICLE_CONSUMPTION} kWh electric vehicle energy use.')
+print(f'- {BATTERY_CAPACITY} kWh maximum battery capacity')
+
+check_tables()
+
+print('Starting simulation...')
+if DYNAMIC:
+    result = simulate_dynamic()
+else:
+    result = simulate_static()
+
+# correct for excesss return and taxes
+if ENERGY_CONSUMPTION < SOLAR_PRODUCTION:
+    excess = SOLAR_PRODUCTION - ENERGY_CONSUMPTION
+    result = result + excess * ENERGY_TAX
+    
+print(f'\nFinal result: € {result} cost per year.')
+
