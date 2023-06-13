@@ -84,7 +84,7 @@ In the simulator, two separate surcharges $s_n$ and $s_x$ are defined, and follo
 Observe that the first case above corresponds to $s_n=s$ and $s_x=0$ while
 the second case above corresponds to $s_n=0$ and $s_x=s$.
 
-Also observe that the total cost depends on the hourly energy consumption $e[d,h]$ which in turn depends on the hourly battery charge $b[d,h]$ (which does not influence the first term $Z(e_n) \times (s_x+t)$). The optimal cost is  thus determined by the battery charge strategy.
+Also observe that the total cost depends on the hourly energy consumption $e[d,h]$ which in turn depends on the hourly battery charge $b[d,h]$ (which does not influence the first term $Z(e_n) \times (s_x+t)$ ). The optimal cost is  thus determined by the battery charge strategy.
 
 # Finding an optimal battery charge strategy
 
@@ -115,8 +115,8 @@ as the charge of the battery at hour $h$ (where $b_0$ is the initial battery cha
 
 
 - $-C \le b[h] \le C$, for all $h \in [0,\ldots,H]$: the battery cannot be charged or discharged more than allowed by the electrical installation.
-- $0 \le B[h] \le $B$, for all $h \in [0,\ldots,H+1]$: the battery cannot create power out of nothing and cannot be charged beyond its capacity. Note this also guarantees that the battery is always sufficiently charged to drive the vehicle as specified by $e_v[h]$.[^vehicle]
-- $ b[h] = 0$ if $e_v[h] > 0$, $h \in [0,\ldots,H]$: when using the car, the battery cannot be charged.
+- $0 \le B[h] \le B$, for all $h \in [0,\ldots,H+1]$: the battery cannot create power out of nothing and cannot be charged beyond its capacity. Note this also guarantees that the battery is always sufficiently charged to drive the vehicle as specified by $e_v[h]$.[^vehicle]
+- $b[h] = 0$ if $e_v[h] > 0$, $h \in [0,\ldots,H]$: when using the car, the battery cannot be charged.
 
 [^vehicle]: Specifying unreasonable vehcile usage constraints (eg demanding the car can immediately  be used when the simulation starts) may prevent the simulator from finding a solution.
 
