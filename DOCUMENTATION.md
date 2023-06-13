@@ -127,7 +127,7 @@ where
 
 Because the simulator needs to optimise for a formula containing the absolute value of the variable $b[h]$ we use [the following trick](https://lpsolve.sourceforge.net/5.1/absolute.htm): introduce additional ghost variables $b'[h]$ that serve as this absolute value in the (modified) optimisation formula
 
-$$ G''[b[],b'[]) = \sum_{h=0}^{H} b[h] \times p[h] + b'[h] \times s_n$$ 
+$$ G''(b[],b'[]) = \sum_{h=0}^{H} b[h] \times p[h] + b'[h] \times s_n$$ 
 
 with the following additional constraints:
 
@@ -138,15 +138,18 @@ Then if $0 \le b[h]$, then $0 \le b[h] \le b'[h]$ by the first rule, while if
 $b[h] < 0$ then $0 < -b[h] \le b'[h]$ by the second rule. As $G''$ decreases as $b'[h]$ decreases, the optimal choice for $b'[h]$ is either $b[h]$ in the first case or $-b[h]$ in the second case. In other words: $b'[h] = | b[h] |$. 
 
 
-# Simulating
+# Simulating the annual cost
 
+For each month $m$ in the year, and each day $d$ in the month, the simulator computes the amount of solar energy produced and the amount of household energy consumed by 
 
+- first spreading the annual production and consumption over the months according to the (average) fraction of energy produced and consumed per month (stored in the tables ```SOLAR_PER_MONTH``` and ```CONSUMPTION_PER_MONTH```, and
+- then divide this by the number of days in this month.
 
-taxes: levies:
-> Indien je meer teruglevert dan je verbruikt, dan kun je dus het volledige bedrag dat je in dat jaar hebt betaald aan belastingen en heffingen wegstrepen, maar je krijgt geen belastingen en heffingen vergoed over alles wat je daarboven nog hebt teruggeleverd. Je komt dus dan in feite op nul uit.
+The vehicle energy consumption is evenly divided over all days of the year. This gives  $e_u$, $e_v$, and $e_s$ for the day to be simulated.
 
-https://www.easyenergy.com/nl/klantenservice/stroom-terugleveren/vergoeding-belastingen-heffingen
+The simulator is given some time to look ahead in the future: at hour $\eta$ it is given access to all tariffs $p$ until midnight next day. The look ahead (measured in hours) then equals $48-\eta$ hours ($24$ when $\eta=0$). 
 
+The simulator then uses  $e_u$, $e_v$, and $e_s$ to compute the vectors $e_c[h]$, $e_s[h]$, $e_v[h]$, and $p[h]$, for $h \in [0,\ldots,H]$ (where $H$ is the look ahead). Here $h$ is the hour of the date relative to $\eta$ (and for simplicity the simulator assumes that today's and tomorrow's daily energy consumption and production values are the same). It uses information about the fraction of energy produced and consumed per hour (stored in the tables ```SOLAR_PER_HOUR``` and  ```CONSUMPTION_PER_HOUR```) for this.
 
+It then calls the generic method to compute an optimal battery charge strategy for the *full* look ahead period, but then uses the returned battery charge strategy $b[]$ to compute the actual costs only for the next $24$ hours (starting at $\eta$) as the cost for today. It also computes the remaining battery charge after these 24 hours (and uses this as the initial charge in the simulation for the next day),
 
-https://www.easyenergy.com/media/1214/tarievenblad-stroom-en-gas-onbepaalde-tijd-01012023.pdf
