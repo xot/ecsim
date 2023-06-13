@@ -51,6 +51,10 @@ For example, to compute the expected price to pay in 2019 when having 3000 kWh h
 
 (this assumes default start time of 15:00, southern orientation of solar panels, a 2 cents surcharge for every kWh used or returned, and 21% VAT over total energy consumption). 
   
+# Notes
+
+The simulator takes average monthly/hourly fluctuations in solar production and electricity consumption into account, but these average historical fractions are based on a situation where few households use electricity for heating. (gas is predominantly used for this purpose in The Netherlands.)
+  
 # Installation
 
 ECSIM is written in Python 3 and relies on the OR-Tools released by Google. See [its documentation](https://developers.google.com/optimization/install/) on how to install. 

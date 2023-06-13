@@ -413,6 +413,7 @@ if DYNAMIC:
 else:
     print('Simulating a static model with the following parameters:')
     print(f'- Fixed tariffs. Consumption: € {HIGHEST_PRICE}, return: € {LOWEST_PRICE}.')
+print(f'- Energy tax € {ENERGY_TAX} per kWH and {int(VAT*100)}% VAT')
 print(f'- {SOLAR_PRODUCTION} kWh solar production.')
 if ORIENTATION:
     print('-- Solar panels oriented east-west.')
