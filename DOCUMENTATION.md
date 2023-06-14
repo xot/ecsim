@@ -20,7 +20,7 @@ All energy is measured in kWh. The local grid of the house is connected to the e
 
 - $e[d,h]$ the hourly amount of electric energy consumed (positive) or returned (negative) to the grid (where day $d \in [0,\ldots,364]$ and hour $h \in [0,\ldots,23]$).
 
-The hourly amount of energy consumed or produced depends on the amount of energy produced by the solar panels that hour ($e_s[d,h]$), the amount of energy consumed by appliances that hour ($e_c[d,h]$) and the amount of energy flowing into or out of the battery ($b[d,h]$). The latter is called the battery charging strategy is discussed later. We have
+The hourly amount of energy consumed or produced depends on the amount of energy produced by the solar panels that hour ($e_s[d,h]$), the amount of energy consumed by appliances that hour ($e_c[d,h]$) and the amount of energy flowing into or out of the battery ($b[d,h]$). The latter is called the battery charging strategy, and is discussed later. We have
 
 $$e[d,h]=e_c[d,h]+b[d,h]-e_s[d,h].$$
 
@@ -29,9 +29,7 @@ The amount of energy produced by the solar panels at a particular hour on a part
 - information about the average fraction of yearly solar production produced each month, and
 - information about the average fraction of daily solar production produced each hour.
 
-The same method is used to estimate the hourly energy consumption.
-
-Let
+The same method is used to estimate the hourly energy consumption. Let
 
 - $e_c$ be the total energy consumed from the gird in a year, and
 - $e_r$ be the total energy returned to the grid in in a year.
@@ -60,8 +58,8 @@ Government taxes and levies *only* apply to the *net* energy consumption over th
 if we define $Z(x)$ as 
 
 $$Z(x) = \begin{cases} 
-            x & \textit{if $x \ge 0$} \\
-			0 & \textit{otherwise}
+            x & \mathit{if $x \ge 0$} \\
+			0 & \mathit{otherwise}
 			\end{cases}
 $$
 
