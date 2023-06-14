@@ -58,8 +58,8 @@ Government taxes and levies *only* apply to the *net* energy consumption over th
 if we define $Z(x)$ as 
 
 $$Z(x) = \begin{cases} 
-            x & \mathit{if $x \ge 0$} \\
-			0 & \mathit{otherwise}
+            x & \mathrm{if\ } x \ge 0 \\
+			0 & \mathrm{otherwise}
 			\end{cases}
 $$
 

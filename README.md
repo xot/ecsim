@@ -5,9 +5,8 @@ A simple energy cost simulator to compute the cost of electricity under a dynami
 # Usage
 
 ```
-usage: ecsim [-h] [-z SOLAR] [-c CONSUMPTION] [-b BATTERY] [-m MAXCHARGE] [-v VEHICLE]
-             [-p LOPRICE] [-P HIPRICE] [-e ENERGYTAX] [-s SURCHARGE] [-x XSURCHARGE] [-f]
-             [-d DEBUG] [-a START] [-t VAT] [-o] [-y YEAR]
+usage: ecsim [-h] [-z SOLAR] [-c CONSUMPTION] [-v VEHICLE] [-b BATTERY] [-f] [-n] [-m MAXCHARGE] [-p LOPRICE] [-P HIPRICE] [-e ENERGYTAX] [-s SURCHARGE] [-x XSURCHARGE] [-d DEBUG]
+             [-a START] [-t VAT] [-o] [-y YEAR]
 
 ECSIM. A dynamic energy cost simulator.
 
@@ -17,12 +16,14 @@ options:
                         Total solar production per year in kWh (default = 0).
   -c CONSUMPTION, --consumption CONSUMPTION
                         Total energy consumption per year in kWh (default = 0).
-  -b BATTERY, --battery BATTERY
-                        Total battery capacity in kWh (default = 0).
-  -m MAXCHARGE, --maxcharge MAXCHARGE
-                        Maximum battery charge per hour in kW (default = 11).
   -v VEHICLE, --vehicle VEHICLE
                         Total electric vehicle energy usage per year in kWh (default = 0).
+  -b BATTERY, --battery BATTERY
+                        Total battery capacity in kWh (default = 0).
+  -f, --fixed           Simulate a dynamic or fixed price model (defualt is dynamic).
+  -n, --notaverage      Use different usage-return hourly tariff (defualt is to use an average hourly tariff).
+  -m MAXCHARGE, --maxcharge MAXCHARGE
+                        Maximum battery charge per hour in kW (default = 11).
   -p LOPRICE, --loprice LOPRICE
                         Minimum energy price per kWh in a year (default = € 0,05).
   -P HIPRICE, --hiprice HIPRICE
@@ -30,20 +31,15 @@ options:
   -e ENERGYTAX, --energytax ENERGYTAX
                         Energy tax per kWh (default = € 0,15).
   -s SURCHARGE, --surcharge SURCHARGE
-                        Supplier surcharge per kWh, always levied (in both directions,
-                        default = € 0,02).
+                        Supplier surcharge per kWh, always levied (in both directions, default = € 0,02).
   -x XSURCHARGE, --xsurcharge XSURCHARGE
-                        Supplier surcharge per kWh, levied only for excess return (default
-                        = € 0,00).
-  -f, --fixed           Simulate a dynamic or fixed price model (defualt is dynamic).
+                        Supplier surcharge per kWh, levied only for excess return (default = € 0,00).
   -d DEBUG, --debug DEBUG
                         Debug level (0, the default, is off).
   -a START, --start START
-                        Hour of the day the simulation starts each day (when tomorrows
-                        tariffs are published, default = 15).
+                        Hour of the day the simulation starts each day (when tomorrows tariffs are published, default = 15).
   -t VAT, --vat VAT     Value added tax (VAT), in percentages (defualt is 21).
-  -o, --orientation     Simulate south (default) or east/west (option selected)
-                        orientation of panels.
+  -o, --orientation     Simulate south (default) or east/west (option selected) orientation of panels.
   -y YEAR, --year YEAR  Year to simulate (defualt = 2022).
 ```
   

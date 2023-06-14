@@ -79,19 +79,23 @@ def parse_commandline():
     global SOLAR_PRODUCTION, ENERGY_CONSUMPTION, BATTERY_CAPACITY
     global VEHICLE_CONSUMPTION, HIGHEST_PRICE, LOWEST_PRICE, DYNAMIC
     global ORIENTATION, YEAR, ENERGY_TAX, SURCHARGE, XSURCHARGE, MAXCHARGE
-    global SIMULATION_START_HOUR, VAT, DEBUG, TEST
+    global SIMULATION_START_HOUR, VAT, DEBUG, TEST, AVERAGE_TARIFF
     # Set up arguments parsing
     parser = argparse.ArgumentParser(description='ECSIM. A dynamic energy cost simulator.')
     parser.add_argument('-z','--solar', default=0, type=int,
                         help='Total solar production per year in kWh (default = 0).')
     parser.add_argument('-c','--consumption', default=0, type=int,
                         help='Total energy consumption per year in kWh (default = 0).')
-    parser.add_argument('-b','--battery', default=0, type=int,
-                        help='Total battery capacity in kWh (default = 0).')
-    parser.add_argument('-m','--maxcharge', default=11, type=int,
-                        help='Maximum battery charge per hour in kW (default = 11).')
     parser.add_argument('-v','--vehicle', default=0, type=int,
                         help='Total electric vehicle energy usage per year in kWh (default = 0).')
+    parser.add_argument('-b','--battery', default=0, type=int,
+                        help='Total battery capacity in kWh (default = 0).')
+    parser.add_argument('-f','--fixed', default=False, action='store_true',
+                        help='Simulate a dynamic or fixed price model (defualt is dynamic).')
+    parser.add_argument('-n','--notaverage', default=False, action='store_true',
+                        help='Use different usage-return hourly tariff (defualt is to use an average hourly tariff).')
+    parser.add_argument('-m','--maxcharge', default=11, type=int,
+                        help='Maximum battery charge per hour in kW (default = 11).')
     parser.add_argument('-p','--loprice', default=0.05, type=float,
                         help='Minimum energy price per kWh in a year (default = € 0,05).')
     parser.add_argument('-P','--hiprice', default=0.20, type=float,
@@ -102,8 +106,6 @@ def parse_commandline():
                         help='Supplier surcharge per kWh, always levied (in both directions, default = € 0,02).')
     parser.add_argument('-x','--xsurcharge', default=0.00, type=float,
                         help='Supplier surcharge per kWh, levied only for excess return (default = € 0,00).')
-    parser.add_argument('-f','--fixed', default=False, action='store_true',
-                        help='Simulate a dynamic or fixed price model (defualt is dynamic).')
     parser.add_argument('-d','--debug', default=0, type=int,
                         help='Debug level (0, the default, is off).')
     parser.add_argument('-a','--start', default=15, type=int,
@@ -125,6 +127,7 @@ def parse_commandline():
     HIGHEST_PRICE = args.hiprice
     LOWEST_PRICE = args.loprice
     DYNAMIC = not args.fixed
+    AVERAGE_TARIFF = not args.notaverage
     DEBUG = args.debug
 #    TEST= args.test
     SIMULATION_START_HOUR = args.start
@@ -186,14 +189,10 @@ def check_tables():
 
 
 def day_hour_usage_tariff(day,hour):
-    ut = usage_tariffs[YEAR][day][hour]
-    return ut + SURCHARGE
+    return usage_tariffs[YEAR][day][hour]
     
 def day_hour_return_tariff(day,hour):
-    rt = return_tariffs[YEAR][day][hour]
-    # you get the taxes back, but still pay the surcharge (return tariffs
-    # are *subtracted* from the total price in the simulation).
-    return rt - SURCHARGE
+    return return_tariffs[YEAR][day][hour]
 
 def day_hour_avg_tariff(day,hour):
     # See optimal_battery_strategy
@@ -217,6 +216,9 @@ initial_charge = 0
 def optimal_battery_strategy_generic(tariff, load, vehicle_load):
     """Compute an optimal battery charging strategy assuming the following:
         - tariff: a list of hourly rates for using/returning electricity.
+            (One 'average' tariff is neccessary because the LLP module cannot
+             deal with different factors depending on the sign of a variable;
+             this means the found solution is sub-optimal) 
         - load: a list of electricity load (>0 usage, <0 (solar) return).
         - vehicle_load: a list of electricty loads for a electric vehcile; if
             positive, that hour the car is used an the battery is disconnected
@@ -344,16 +346,16 @@ def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today
         for h in range(24):
             dayload = dayload + load[h]
             total = batterycharge[h] + load[h]
-            # It seems som of the surcharges are already incorporated in the
-            # difference between usage and return tariffs
-            #if total > 0:
-            #    actual += todays_usage_tariffs[h] * total
-            #else:
-            #    actual += todays_return_tariffs[h] * total
-            if total > 0:
-                actual += (avg_tariff[h] + SURCHARGE) * total
+            if AVERAGE_TARIFF:
+                if total > 0:
+                    actual += (avg_tariff[h] + SURCHARGE) * total
+                else:
+                    actual += (avg_tariff[h] - SURCHARGE) * total
             else:
-                actual += (avg_tariff[h] - SURCHARGE) * total
+                if total > 0:
+                    actual += (todays_usage_tariffs[h] + SURCHARGE) * total
+                else:
+                    actual += (todays_return_tariffs[h] - SURCHARGE) * total
         if abs(dayload - consumption_today + solar_today) > 0.00001:
             print(f'Error. Computed day load {dayload} does not equal {consumption_today - solar_today}')
         debug(2,f'- Strategy {bs(batterycharge)}')
@@ -448,6 +450,10 @@ parse_commandline()
 if DYNAMIC:
     print('Simulating a dynamic model with the following parameters:')
     print(f'- Year {YEAR}.')
+    if AVERAGE_TARIFF:
+        print('- Using average hourly tariffs')
+    else:
+        print('- Using different usage - return hourly tariffs')
     print(f'- Surcharge € {SURCHARGE} (both usage and return) € {XSURCHARGE} (for excess usage only).')
     print(f'- Starting simulation at hour {SIMULATION_START_HOUR}.')
 else:
