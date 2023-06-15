@@ -5,12 +5,6 @@ A simple energy cost simulator to compute the cost of electricity under a dynami
 # Usage
 
 ```
-usage: ecsim [-h] [-z SOLAR] [-c CONSUMPTION] [-v VEHICLE] [-b BATTERY] [-f] [-n] [-m MAXCHARGE] [-p LOPRICE] [-P HIPRICE] [-e ENERGYTAX] [-s SURCHARGE] [-x XSURCHARGE] [-d DEBUG]
-             [-a START] [-t VAT] [-o] [-y YEAR]
-
-ECSIM. A dynamic energy cost simulator.
-
-options:
   -h, --help            show this help message and exit
   -z SOLAR, --solar SOLAR
                         Total solar production per year in kWh (default = 0).
@@ -38,6 +32,10 @@ options:
                         Debug level (0, the default, is off).
   -a START, --start START
                         Hour of the day the simulation starts each day (when tomorrows tariffs are published, default = 15).
+  -S EVSTART, --evstart EVSTART
+                        First hour of the day the vehicle is used (default = 10).
+  -L EVLENGTH, --evlength EVLENGTH
+                        Number of hours the vehicle is used on a day (default = 5).
   -t VAT, --vat VAT     Value added tax (VAT), in percentages (defualt is 21).
   -o, --orientation     Simulate south (default) or east/west (option selected) orientation of panels.
   -y YEAR, --year YEAR  Year to simulate (defualt = 2022).

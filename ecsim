@@ -30,6 +30,12 @@ from return_tariffs_2021 import *
 usage_tariffs["2021"] = USAGE_TARIFFS_2021
 return_tariffs["2021"] = RETURN_TARIFFS_2021
 
+from usage_tariffs_2020 import *
+from return_tariffs_2020 import *
+#
+usage_tariffs["2020"] = USAGE_TARIFFS_2020
+return_tariffs["2020"] = RETURN_TARIFFS_2020
+
 from usage_tariffs_2019 import *
 from return_tariffs_2019 import *
 
@@ -40,15 +46,17 @@ return_tariffs["2019"] = RETURN_TARIFFS_2019
 usage_tariffs["1984"] = [ [ 0.01 for h in range(24) ] for d in range(365) ]
 return_tariffs["1984"] = [ [ 0.01 for h in range(24) ] for d in range(365) ]
 
-# TABLES
+# TABLES (derived 
 
 # Average fraction of yearly solar production produced each
 # month (Jan=0, dec=11)
+# Source: https://warmerhuis.nl/zonnepanelen-opbrengst-per-maand
 SOLAR_PER_MONTH = [0.03, 0.05, 0.08, 0.12, 0.13, 0.13,
                    0.13, 0.11, 0.10, 0.07, 0.03, 0.02]
 
 # Average fraction of daily solar production produced each hour (0-23)
 # (if panels are facing south)
+# source: https://warmerhuis.nl/beste-opstelling-zonnepanelen
 SOLAR_PER_HOUR_NORTH_SOUTH = [0.000, 0.000, 0.000, 0.000, 0.000, 0.004,
                               0.007, 0.013, 0.016, 0.041, 0.082, 0.114,
                               0.127, 0.131, 0.127, 0.118, 0.098, 0.065,
@@ -56,6 +64,7 @@ SOLAR_PER_HOUR_NORTH_SOUTH = [0.000, 0.000, 0.000, 0.000, 0.000, 0.004,
 
 # Average fraction of daily solar production produced each hour (0-23)
 # (if panels are facing east-west)
+# source: https://warmerhuis.nl/beste-opstelling-zonnepanelen
 SOLAR_PER_HOUR_EAST_WEST = [0.000, 0.000, 0.000, 0.000, 0.000, 0.005,
                             0.013, 0.028, 0.043, 0.063, 0.079, 0.095,
                             0.102, 0.100, 0.098, 0.095, 0.087, 0.076,
@@ -63,11 +72,12 @@ SOLAR_PER_HOUR_EAST_WEST = [0.000, 0.000, 0.000, 0.000, 0.000, 0.005,
 
 # Average fraction of yearly energy consumption consumed each
 # month (Jan=0, dec=11)
-#
+# Source: https://www.zonneplan.nl/kenniscentrum/energie/jouw-energierekening-met-een-dynamische-energiecontract
 CONSUMPTION_PER_MONTH = [0.098, 0.085, 0.090, 0.079, 0.077, 0.072,
                          0.074, 0.075, 0.073, 0.085, 0.090, 0.102]
 
 # Average fraction of daily energy consumption consumed each hour (0-23)
+# Source: unkniwn :-(
 CONSUMPTION_PER_HOUR = [0.033, 0.028, 0.025, 0.023, 0.023, 0.025,
                         0.029, 0.036, 0.042, 0.044, 0.044, 0.044,
                         0.044, 0.042, 0.042, 0.042, 0.049, 0.060,
@@ -80,6 +90,7 @@ def parse_commandline():
     global VEHICLE_CONSUMPTION, HIGHEST_PRICE, LOWEST_PRICE, DYNAMIC
     global ORIENTATION, YEAR, ENERGY_TAX, SURCHARGE, XSURCHARGE, MAXCHARGE
     global SIMULATION_START_HOUR, VAT, DEBUG, TEST, AVERAGE_TARIFF
+    global EV_USAGE_START, EV_USAGE_LENGTH
     # Set up arguments parsing
     parser = argparse.ArgumentParser(description='ECSIM. A dynamic energy cost simulator.')
     parser.add_argument('-z','--solar', default=0, type=int,
@@ -110,6 +121,10 @@ def parse_commandline():
                         help='Debug level (0, the default, is off).')
     parser.add_argument('-a','--start', default=15, type=int,
                         help='Hour of the day the simulation starts each day (when tomorrows tariffs are published, default = 15).')
+    parser.add_argument('-S','--evstart', default=10, type=int,
+                        help='First hour of the day the vehicle is used (default = 10).')
+    parser.add_argument('-L','--evlength', default=5, type=int,
+                        help='Number of hours the vehicle is used on a day (default = 5).')
     parser.add_argument('-t','--vat', default=21, type=int,
                         help='Value added tax (VAT), in percentages (defualt is 21).')
     parser.add_argument('-o','--orientation', default=False, action='store_true',
@@ -133,6 +148,14 @@ def parse_commandline():
     SIMULATION_START_HOUR = args.start
     if (SIMULATION_START_HOUR < 0) or (SIMULATION_START_HOUR > 23):
         print(f'Simultation start hour {SIMULATION_START_HOUR} out of range.')
+        exit()
+    EV_USAGE_START = args.evstart
+    if EV_USAGE_START not in range(0,24):
+        print(f'Vehicle startb hour {EV_USAGE_START} out of range.')
+        exit()
+    EV_USAGE_LENGTH = args.evlength
+    if EV_USAGE_LENGTH not in range(0,25):
+        print(f'Vehicle usage length {EV_USAGE_LENGTH} out of range.')
         exit()
     ORIENTATION = args.orientation
     YEAR = args.year
@@ -168,6 +191,13 @@ def check_tariff_table(table):
     for d in range(365):
         if len(table[d]) != 24:
             print(f'--- Day {d} has wrong length {len(table[d])}.')
+    # some statistics
+    minh = min([min(l) for l in table])
+    maxh = max([max(l) for l in table])    
+    minda = min([sum(l)/24 for l in table])
+    maxda = max([sum(l)/24 for l in table])    
+    print(f'--- Hourly tariff: min: {minh:.3f}, max: {maxh:.3f}')
+    print(f'--- Average daily tariffL min: {minda:.3f}, max: {maxda:.3f}')
 
 def check_tables():
     print('Validating internal tables')
@@ -211,8 +241,6 @@ def battery_charge_at_hour(hour, initial_charge, vehicle_load, batteryload):
         result = result + batteryload[h] - vehicle_load[h]
     return result
 
-initial_charge = 0
-
 def optimal_battery_strategy_generic(tariff, load, vehicle_load):
     """Compute an optimal battery charging strategy assuming the following:
         - tariff: a list of hourly rates for using/returning electricity.
@@ -225,16 +253,21 @@ def optimal_battery_strategy_generic(tariff, load, vehicle_load):
         Return:
         - the computed battery charging strategy as a list of hourly
         charges/discharges
-        All lists have the same length. The battery charged is computed assuming
-        the following
+    
+        All lists have the same length.
+
+        The battery charged is computed assuming the following
         - fixed SURCHARGE is charged for every kWh transferred to or from the net
     """
     global initial_charge
+    debug(2,f'- Tariff: {bs(tariff)}')
+    debug(2,f'- Net load (household - solar): {bs(load)}')    
+    debug(2,f'- Vehicle load: {bs(vehicle_load)}')
+    # make bakcup of initial_charge in case something goes wrong
     initial_charge_backup = initial_charge
     hours = len(tariff)
     if (len(load) != hours) or (len(vehicle_load) != hours):
         print('ERROR! Inputs have different length.')
-        initial_charge = initial_charge_backup
         return []
     # Create a solver using the GLOP backend
     solver = pywraplp.Solver('Battery strategy', pywraplp.Solver.GLOP_LINEAR_PROGRAMMING)
@@ -247,8 +280,8 @@ def optimal_battery_strategy_generic(tariff, load, vehicle_load):
     for h in range(hours):
         batterychargex[h] = solver.NumVar(-MAXCHARGE, MAXCHARGE, f'batterychargex[{h}]')
     # Add constraints for each resource
-    # TODO: cannot start at 0 because of rounding errors?
-    # anyway: initial charge is gauranteed to lie within the allowed range
+    # Starts at 1 because initial charge is gauranteed to lie
+    # within the allowed range
     for h in range(1,hours+1):
         # - battery cannot create power out of nothing!
         # (also guarantees that battery is charged enough to drive the car
@@ -285,26 +318,44 @@ def optimal_battery_strategy_generic(tariff, load, vehicle_load):
         result = [batterycharge[h].solution_value() for h in range(hours)]
         return result
     else:
-        print(f'ERROR! No battery charging strategy  found. Initial charge {initial_charge} ')
+        print(f'ERROR! No battery charging strategy found. Initial charge {initial_charge} ')
         initial_charge = initial_charge_backup
         return []
 
 
-# first hour electric vehicle will be used (relative to simulation start time)
-USAGE_START = 10
-# number of hours vehcile will be used (and battery disconnected)
-USAGE_LENGTH = 5
-    
-def compute_vehicle_load(total, lookahead):
+
+def compute_vehicle_load(total, start, lookahead):
     """Compute a list of loads for when the electric vehicle is used the
-       coming hours. 
-       TODO: add otpions
+       coming hours.
+       NOTE: somehwat tricky, because we need to add the load for today as well
+       as tomorrow, to ensure that the optimal battery strategy algorithm reserves
+       enough capacity for tomorrow (especially relevant when the simulation start
+       hour falls within tha car usage interval!)
+       TODO: add options; 
     """
+    # create the vector with all cells equal to 0
     vehicle_load = [0 for h in range(lookahead)]
-    for h in range(USAGE_START,USAGE_START + USAGE_LENGTH):
-        vehicle_load[h % lookahead] = total / USAGE_LENGTH
+    for h in range(EV_USAGE_START,EV_USAGE_START+EV_USAGE_LENGTH):
+        # fill the first 24 hours
+        # h is a fixed hour in the day, while the list is indexed relative to
+        # start
+        vehicle_load[(h-start) % 24] = total / EV_USAGE_LENGTH
+        # fill the next day (some cells may already be filled)
+        # lookahead is such that the last 24 cells correspond to a full day
+        # (i.e. looakhead-24 is hour 0)
+        vehicle_load[-24+h] = total / EV_USAGE_LENGTH
     return vehicle_load
-        
+
+def compute_24h_cost (load, batterycharge,usage_tariff,return_tariff):
+    result = 0
+    for h in range(24):
+        total = batterycharge[h] + load[h]
+        if total > 0:
+            result += (usage_tariff[h] + SURCHARGE) * total
+        else:
+            result += (return_tariff[h] - SURCHARGE) * total
+    return result
+
 def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today, vehicle_usage_today):
     """Simulate a single day in the dynamic pricing scheme, using
        arbitrary lookahead and starting hour.
@@ -313,7 +364,7 @@ def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today
        'day' at hour 'start' (i.e. days are shifted by start hours). 
     """
     global initial_charge
-    debug(1,f'Day {day}:')
+    debug(1,f'Day {day}: start hour {start}, look ahead {lookahead}')
     # compute consumption/solar production per hour using average distribution
     # of CONSUMPTION_PER_HOUR and SOLAR_PER_HOUR and use that to compute
     # the estimated load for each hour in the lookahead period
@@ -323,17 +374,27 @@ def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today
     load = [ consumption_today * CONSUMPTION_PER_HOUR[h % 24] 
            - solar_today  * SOLAR_PER_HOUR[h % 24] 
            for h in range(start,start+lookahead) ]
+    # verify
+    dayload = sum([load[h] for h in range(24)])
+    if abs(dayload - consumption_today + solar_today) > 0.00001:
+        print(f'Error. Computed day load {dayload} does not equal {consumption_today - solar_today}')
     # compute the vehicle load
-    vehicle_load = compute_vehicle_load(vehicle_usage_today, lookahead) 
+    vehicle_load = compute_vehicle_load(vehicle_usage_today, start, lookahead)
+    # verify that the computed vehicle load for 'today' equals the total consumption for today
+    vload = sum([vehicle_load[h] for h in range(24)])
+    if abs(vload - vehicle_usage_today) > 0.00001:
+            print(f'Error. Computed vehicle load {vload} does not equal {vehicle_usage_today}')
     # get the pricing vectors: first entry corresponds to start (hour); length is lookahead
     todays_usage_tariffs = [ day_hour_usage_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
     todays_return_tariffs = [ day_hour_return_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
+    # optimal battery charging strategy finder needs to use average hourly tariff
     avg_tariff = [ day_hour_avg_tariff(day + h // 24, h % 24) for h in range(start,start+lookahead)]
     batterycharge = optimal_battery_strategy_generic(avg_tariff, load, vehicle_load)
-    # Now compute the actual cost (and the new initial charge ONLY
-    # for exactly one day (ie the next 24 hours)
+    # If a strategy is found, compute the actual cost
+    # (and the new initial charge) ONLY for exactly one day
+    # (ie the next 24 hours)
     if len(batterycharge) > 0:
-        # update initial charge
+        # compute final battery charge
         final_charge = battery_charge_at_hour(24, initial_charge, vehicle_load, batterycharge)
         # and cover for rounding errors
         if final_charge < 0:
@@ -341,26 +402,14 @@ def simulate_day_lookahead(day, start, lookahead, solar_today, consumption_today
         # compute actual price for today given the computed battery load
         # the correct usage and return tariffs and the netto consumption
         # (again note that the vehicle load is part of the batterycharge
-        actual = 0
-        dayload = 0
-        for h in range(24):
-            dayload = dayload + load[h]
-            total = batterycharge[h] + load[h]
-            if AVERAGE_TARIFF:
-                if total > 0:
-                    actual += (avg_tariff[h] + SURCHARGE) * total
-                else:
-                    actual += (avg_tariff[h] - SURCHARGE) * total
-            else:
-                if total > 0:
-                    actual += (todays_usage_tariffs[h] + SURCHARGE) * total
-                else:
-                    actual += (todays_return_tariffs[h] - SURCHARGE) * total
-        if abs(dayload - consumption_today + solar_today) > 0.00001:
-            print(f'Error. Computed day load {dayload} does not equal {consumption_today - solar_today}')
+        if AVERAGE_TARIFF:
+            actual = compute_24h_cost(load,batterycharge,avg_tariff,avg_tariff)
+        else:
+            actual = compute_24h_cost(load,batterycharge,todays_usage_tariffs,todays_return_tariffs)
         debug(2,f'- Strategy {bs(batterycharge)}')
         debug(1,f'- Today cost (without taxes) {actual}')
         debug(1,f'- Battery charge: start {initial_charge}, end {final_charge}.')
+        # update initial charge for next day
         initial_charge = final_charge
         return actual
     return 0
@@ -378,15 +427,22 @@ def month_of_day(day):
         month +=1
     return month
 
-# hour of the day when new simulation with lookahead starts; time
-# when the new energy proces are published
-SIMULATION_START_HOUR = 15
-
+initial_charge = 0
 
 def simulate_dynamic():
     """Simulate a dynamic pricing scheme, using hourly tariffs from
        usage_tariffs[YEAR] and return_tariffs[YEAR].  
     """
+    global initial_charge
+    # make the vehicle_usage_this_day constant throughout; the simulator
+    # does not like bumps in it when changing to a month with fewer days
+    vehicle_usage_this_day = VEHICLE_CONSUMPTION / 365
+    # make sure electric vehicle can be used the first day (and hence
+    # a battery charge strategy cna be found; we get this energy 'for free'
+    if vehicle_usage_this_day > BATTERY_CAPACITY:
+        print(f'ERROR: daily vehicle power use {vehicle_usage_this_day} exceeds battery capacity {BATTERY_CAPACITY}')
+        exit(1)
+    initial_charge = vehicle_usage_this_day
     result = 0
     for day in range(364):
         month = month_of_day(day)
@@ -396,8 +452,6 @@ def simulate_dynamic():
         consumption_this_month = \
             ENERGY_CONSUMPTION * CONSUMPTION_PER_MONTH[month] 
         consumption_this_day = consumption_this_month / days_this_month
-        vehicle_usage_this_month =  VEHICLE_CONSUMPTION / 12
-        vehicle_usage_this_day = vehicle_usage_this_month / days_this_month
         # the simulation looks ahead 24 hours if SIMULATION_START_HOUR = 0
         # (i.e. if normal days are simulated); otherwise it looks ahead from
         # this start hour until 24:00 the next day.
@@ -469,6 +523,8 @@ else:
     SOLAR_PER_HOUR = SOLAR_PER_HOUR_NORTH_SOUTH
 print(f'- {ENERGY_CONSUMPTION} kWh energy consumption.')
 print(f'- {VEHICLE_CONSUMPTION} kWh electric vehicle energy use.')
+if (VEHICLE_CONSUMPTION > 0):
+    print(f'-- Vehicle used from {EV_USAGE_START} to {EV_USAGE_START + EV_USAGE_LENGTH} each day.')
 print(f'- {BATTERY_CAPACITY} kWh maximum battery capacity')
 
 check_tables()
